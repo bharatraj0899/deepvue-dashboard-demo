@@ -113,13 +113,6 @@ export const DashboardLayout: React.FC = () => {
     };
   }, []);
 
-  // Try to adjust layout to keep widgets within viewport - always returns valid layout
-  const adjustLayoutForViewport = useCallback((newLayout: GridItemLayout[]): GridItemLayout[] => {
-    const cols = GRID_CONFIG.cols;
-
-    // Force all widgets to stay within viewport bounds
-    return forceLayoutsInViewport(newLayout, cols, maxRows);
-  }, [maxRows]);
 
   // Calculate maxH and maxW for each widget based on available space in ALL directions
   // This allows resizing from left, right, top, and bottom handles
@@ -131,81 +124,89 @@ export const DashboardLayout: React.FC = () => {
       const itemRight = item.x + item.w;
       const itemBottom = item.y + item.h;
 
-      // Calculate space available to the LEFT (for left-side resize)
-      const widgetsToLeft = currentLayouts
-        .filter(other => {
-          if (other.i === item.i) return false;
-          // Widget is to the left (its right edge is <= our left edge)
-          if (other.x + other.w > item.x) return false;
-          // Check vertical overlap
-          const otherBottom = other.y + other.h;
-          const hasVerticalOverlap = !(other.y >= itemBottom || otherBottom <= item.y);
-          return hasVerticalOverlap;
-        });
-
-      // Find the rightmost edge of widgets to the left
-      let leftBoundary = 0;
-      for (const widget of widgetsToLeft) {
-        leftBoundary = Math.max(leftBoundary, widget.x + widget.w);
-      }
-      const spaceOnLeft = item.x - leftBoundary;
-
       // Calculate space available to the RIGHT (for right-side resize)
-      const widgetsToRight = currentLayouts
-        .filter(other => {
-          if (other.i === item.i) return false;
-          // Widget is to the right (its left edge is >= our right edge)
-          if (other.x < itemRight) return false;
-          // Check vertical overlap
-          const otherBottom = other.y + other.h;
-          const hasVerticalOverlap = !(other.y >= itemBottom || otherBottom <= item.y);
-          return hasVerticalOverlap;
-        });
+      // Check if there are widgets to the right that would be pushed
+      const widgetsToRight = currentLayouts.filter(other => {
+        if (other.i === item.i) return false;
+        // Widget is to the right and overlaps vertically
+        if (other.x < itemRight) return false;
+        const otherBottom = other.y + other.h;
+        const hasVerticalOverlap = !(other.y >= itemBottom || otherBottom <= item.y);
+        return hasVerticalOverlap;
+      });
 
-      // Find the leftmost edge of widgets to the right
-      let rightBoundary = cols;
-      for (const widget of widgetsToRight) {
-        rightBoundary = Math.min(rightBoundary, widget.x);
+      let maxSpaceRight = cols - itemRight;
+      // If there are widgets to the right, calculate max expansion that keeps them in viewport
+      if (widgetsToRight.length > 0) {
+        for (const widget of widgetsToRight) {
+          // Maximum expansion = space until this widget would be pushed out of viewport
+          const maxPushRight = cols - (widget.x + widget.w);
+          const spaceToWidget = widget.x - itemRight;
+          const maxExpansion = spaceToWidget + maxPushRight;
+          maxSpaceRight = Math.min(maxSpaceRight, maxExpansion);
+        }
       }
-      const spaceOnRight = rightBoundary - itemRight;
+      const spaceOnRight = maxSpaceRight;
 
-      // Calculate space available ABOVE (for top-side resize)
-      const widgetsAbove = currentLayouts
-        .filter(other => {
-          if (other.i === item.i) return false;
-          // Widget is above (its bottom edge is <= our top edge)
-          if (other.y + other.h > item.y) return false;
-          // Check horizontal overlap
-          const otherRight = other.x + other.w;
-          const hasHorizontalOverlap = !(other.x >= itemRight || otherRight <= item.x);
-          return hasHorizontalOverlap;
-        });
+      // Calculate space available to the LEFT (for left-side resize)
+      const widgetsToLeft = currentLayouts.filter(other => {
+        if (other.i === item.i) return false;
+        if (other.x + other.w > item.x) return false;
+        const otherBottom = other.y + other.h;
+        const hasVerticalOverlap = !(other.y >= itemBottom || otherBottom <= item.y);
+        return hasVerticalOverlap;
+      });
 
-      // Find the bottommost edge of widgets above
-      let topBoundary = 0;
-      for (const widget of widgetsAbove) {
-        topBoundary = Math.max(topBoundary, widget.y + widget.h);
+      let maxSpaceLeft = item.x;
+      if (widgetsToLeft.length > 0) {
+        for (const widget of widgetsToLeft) {
+          const maxPushLeft = widget.x;
+          const spaceToWidget = item.x - (widget.x + widget.w);
+          const maxExpansion = spaceToWidget + maxPushLeft;
+          maxSpaceLeft = Math.min(maxSpaceLeft, maxExpansion);
+        }
       }
-      const spaceAbove = item.y - topBoundary;
+      const spaceOnLeft = maxSpaceLeft;
 
       // Calculate space available BELOW (for bottom-side resize)
-      const widgetsBelow = currentLayouts
-        .filter(other => {
-          if (other.i === item.i) return false;
-          // Widget is below (its top edge is >= our bottom edge)
-          if (other.y < itemBottom) return false;
-          // Check horizontal overlap
-          const otherRight = other.x + other.w;
-          const hasHorizontalOverlap = !(other.x >= itemRight || otherRight <= item.x);
-          return hasHorizontalOverlap;
-        });
+      const widgetsBelow = currentLayouts.filter(other => {
+        if (other.i === item.i) return false;
+        if (other.y < itemBottom) return false;
+        const otherRight = other.x + other.w;
+        const hasHorizontalOverlap = !(other.x >= itemRight || otherRight <= item.x);
+        return hasHorizontalOverlap;
+      });
 
-      // Find the topmost edge of widgets below
-      let bottomBoundary = maxRows;
-      for (const widget of widgetsBelow) {
-        bottomBoundary = Math.min(bottomBoundary, widget.y);
+      let maxSpaceBelow = maxRows - itemBottom;
+      if (widgetsBelow.length > 0) {
+        for (const widget of widgetsBelow) {
+          const maxPushDown = maxRows - (widget.y + widget.h);
+          const spaceToWidget = widget.y - itemBottom;
+          const maxExpansion = spaceToWidget + maxPushDown;
+          maxSpaceBelow = Math.min(maxSpaceBelow, maxExpansion);
+        }
       }
-      const spaceBelow = bottomBoundary - itemBottom;
+      const spaceBelow = maxSpaceBelow;
+
+      // Calculate space available ABOVE (for top-side resize)
+      const widgetsAbove = currentLayouts.filter(other => {
+        if (other.i === item.i) return false;
+        if (other.y + other.h > item.y) return false;
+        const otherRight = other.x + other.w;
+        const hasHorizontalOverlap = !(other.x >= itemRight || otherRight <= item.x);
+        return hasHorizontalOverlap;
+      });
+
+      let maxSpaceAbove = item.y;
+      if (widgetsAbove.length > 0) {
+        for (const widget of widgetsAbove) {
+          const maxPushUp = widget.y;
+          const spaceToWidget = item.y - (widget.y + widget.h);
+          const maxExpansion = spaceToWidget + maxPushUp;
+          maxSpaceAbove = Math.min(maxSpaceAbove, maxExpansion);
+        }
+      }
+      const spaceAbove = maxSpaceAbove;
 
       // maxW = current width + space on left + space on right
       const maxW = item.w + spaceOnLeft + spaceOnRight;
@@ -224,9 +225,15 @@ export const DashboardLayout: React.FC = () => {
 
   // Track if we just applied a swap - prevents handleLayoutChange from overriding our positions
   const justAppliedSwapRef = useRef(false);
+  const isUpdatingLayoutRef = useRef(false);
 
   const handleLayoutChange = useCallback((newLayout: GridItemLayout[]) => {
     const cols = GRID_CONFIG.cols;
+
+    // Prevent infinite loops - if we're already updating, skip
+    if (isUpdatingLayoutRef.current) {
+      return;
+    }
 
     // If we just applied a swap, skip this callback as react-grid-layout may provide stale positions
     if (justAppliedSwapRef.current) {
@@ -234,19 +241,31 @@ export const DashboardLayout: React.FC = () => {
       return;
     }
 
-    // Force adjust layout to fit within viewport - always returns valid layout
-    const adjustedLayout = adjustLayoutForViewport(newLayout);
+    // Check if layout actually changed - compare positions and sizes
+    const layoutChanged = newLayout.some(item => {
+      const existing = layouts.find(l => l.i === item.i);
+      if (!existing) return true;
+      return existing.x !== item.x || existing.y !== item.y || 
+             existing.w !== item.w || existing.h !== item.h;
+    });
 
-    // CRITICAL: Double-check that no widget is outside viewport
-    const hasOutOfBoundsWidget = adjustedLayout.some(item =>
+    // If nothing changed, skip update to prevent infinite loop
+    if (!layoutChanged && newLayout.length === layouts.length) {
+      return;
+    }
+
+    // Only clamp positions when widgets are truly outside viewport bounds
+    // Allow horizontal compaction to work naturally by not repositioning widgets unnecessarily
+    const hasOutOfBoundsWidget = newLayout.some(item =>
       item.x < 0 || item.y < 0 ||
       item.x + item.w > cols || item.y + item.h > maxRows
     );
 
-    // If any widget is still out of bounds after adjustment, force it back
+    // Only apply viewport adjustments if widgets are actually out of bounds
+    // This allows horizontal compaction to work without interference
     const finalLayout = hasOutOfBoundsWidget
-      ? forceLayoutsInViewport(adjustedLayout, cols, maxRows)
-      : adjustedLayout;
+      ? forceLayoutsInViewport(newLayout, cols, maxRows)
+      : newLayout;
 
     // Calculate maxH and maxW for each widget to prevent resizing beyond viewport/other widgets
     const maxDimensions = calculateMaxDimensions(finalLayout);
@@ -266,8 +285,16 @@ export const DashboardLayout: React.FC = () => {
 
     // Store as last valid layout
     lastValidLayoutRef.current = updatedLayouts;
+    
+    // Set flag to prevent re-entry
+    isUpdatingLayoutRef.current = true;
     updateLayouts(updatedLayouts);
-  }, [layouts, updateLayouts, adjustLayoutForViewport, calculateMaxDimensions, maxRows]);
+    
+    // Reset flag after a tick
+    setTimeout(() => {
+      isUpdatingLayoutRef.current = false;
+    }, 0);
+  }, [layouts, updateLayouts, calculateMaxDimensions, maxRows]);
 
   // Check if there's any space available for a widget of given size
   const hasAnySpaceForWidget = useCallback((w: number, h: number): boolean => {
@@ -423,10 +450,13 @@ export const DashboardLayout: React.FC = () => {
     isResizingRef.current = true;
     lastValidLayoutRef.current = layouts.map(l => ({ ...l }));
     setResizePreview(null);
+    // Suppress unused parameter warnings - these are required by the callback signature
+    void _oldItem;
+    void _newItem;
   }, [layouts]);
 
   // Handle resize stop - apply space management or validate layout
-  const handleResizeStop = useCallback((newLayout: GridItemLayout[], oldItem: GridItemLayout, newItem: GridItemLayout, _placeholder: GridItemLayout, _e: MouseEvent, _element: HTMLElement) => {
+  const handleResizeStop = useCallback((newLayout: GridItemLayout[], _oldItem: GridItemLayout, _newItem: GridItemLayout, _placeholder: GridItemLayout, _e: MouseEvent, _element: HTMLElement) => {
     isResizingRef.current = false;
     const cols = GRID_CONFIG.cols;
 
@@ -453,6 +483,23 @@ export const DashboardLayout: React.FC = () => {
 
     setResizePreview(null);
 
+    // Check if any widgets were moved to different rows due to compaction during resize
+    // This happens when pushed widgets reach viewport edge and grid library auto-compacts them
+    const hasUnexpectedRowChange = newLayout.some(item => {
+      const original = lastValidLayoutRef.current.find(l => l.i === item.i);
+      // If widget moved to a different row and wasn't the one being resized
+      if (original && item.i !== _newItem.i && item.y !== original.y) {
+        return true;
+      }
+      return false;
+    });
+
+    // If widgets were unexpectedly moved (compacted), revert to last valid layout
+    if (hasUnexpectedRowChange) {
+      updateLayouts(lastValidLayoutRef.current);
+      return;
+    }
+
     // Feature 2: Enforce minimum dimensions
     const validatedLayout = newLayout.map(item => {
       const widget = widgets.find(w => w.i === item.i);
@@ -474,23 +521,9 @@ export const DashboardLayout: React.FC = () => {
       // Revert to last valid layout
       updateLayouts(lastValidLayoutRef.current);
     } else {
-      // Feature 7: For shrinking, preserve other widget positions (don't compact)
-      const isShrinking = newItem.w < oldItem.w || newItem.h < oldItem.h;
-
-      let finalLayout: GridItemLayout[];
-      if (isShrinking) {
-        // Preserve positions of all other widgets
-        finalLayout = validatedLayout.map(item => {
-          if (item.i === newItem.i) {
-            return item; // Apply shrink to the resized widget
-          }
-          // Keep original position for other widgets
-          const original = lastValidLayoutRef.current.find(l => l.i === item.i);
-          return original ? { ...item, x: original.x, y: original.y } : item;
-        });
-      } else {
-        finalLayout = validatedLayout;
-      }
+      // Allow horizontal compaction to work - use the validated layout as-is
+      // The grid library's horizontal compaction will handle repositioning
+      const finalLayout = validatedLayout;
 
       // Calculate maxH and maxW for the final layout
       const maxDimensions = calculateMaxDimensions(finalLayout);
@@ -551,13 +584,30 @@ export const DashboardLayout: React.FC = () => {
   // Feature 6: Handle resize to detect space management needs
   // Supports resizing from all directions (top, bottom, left, right)
   const handleResize = useCallback((
-    _layout: GridItemLayout[],
+    layout: GridItemLayout[],
     oldItem: GridItemLayout,
     newItem: GridItemLayout,
     _placeholder: GridItemLayout,
     _e: MouseEvent,
     _element: HTMLElement
   ) => {
+    // Check if any widgets were moved to different rows due to compaction
+    // This can happen when pushed widgets reach viewport edge
+    const hasUnexpectedRowChange = layout.some(item => {
+      const original = lastValidLayoutRef.current.find(l => l.i === item.i);
+      // If widget moved to a different row and wasn't the one being resized
+      if (original && item.i !== newItem.i && item.y !== original.y) {
+        return true;
+      }
+      return false;
+    });
+
+    // If widgets were moved to different rows, prevent this resize
+    if (hasUnexpectedRowChange) {
+      setResizePreview(null);
+      return;
+    }
+
     // Check if this is an enlargement (size increased OR position moved to expand)
     // Enlargement can happen in any direction:
     // - Right/Bottom: w or h increases
@@ -1022,8 +1072,8 @@ export const DashboardLayout: React.FC = () => {
             draggableHandle=".widget-drag-handle"
             resizeHandles={['se', 'e', 's', 'n', 'w', 'ne', 'nw', 'sw']}
             useCSSTransforms={true}
-            compactType={null}
-            preventCollision={true}
+            compactType={'horizontal'}
+            preventCollision={false}
             maxRows={maxRows}
             isBounded={true}
             allowOverlap={false}

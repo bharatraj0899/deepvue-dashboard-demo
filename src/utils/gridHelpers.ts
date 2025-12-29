@@ -586,32 +586,153 @@ export function calculateResizeSpace(
   const shrunkWidgets: string[] = [];
   let stillAffected = [...affectedWidgets];
 
-  // Phase 1: Try to move affected widgets to empty spaces
-  for (const widget of stillAffected) {
-    const occupancy = createOccupancyGrid(
-      workingLayouts.filter(l => l.i !== widget.i && l.i !== resizingId),
-      cols,
-      maxRows
-    );
+  // Determine resize direction based on position and size changes
+  const oldBounds = { x: resizingWidget.x, y: resizingWidget.y, w: resizingWidget.w, h: resizingWidget.h };
+  const isResizingRight = newX === oldBounds.x && newW > oldBounds.w;
+  const isResizingLeft = newX < oldBounds.x && newW > oldBounds.w;
+  const isResizingBottom = newY === oldBounds.y && newH > oldBounds.h;
+  const isResizingTop = newY < oldBounds.y && newH > oldBounds.h;
 
-    // Mark new bounds of resizing widget as occupied
-    for (let r = newBounds.y; r < Math.min(newBounds.y + newBounds.h, maxRows); r++) {
-      for (let c = newBounds.x; c < Math.min(newBounds.x + newBounds.w, cols); c++) {
-        if (occupancy.grid[r]) {
-          occupancy.grid[r][c] = true;
+  // Phase 1: Try to push affected widgets in the direction of resize
+  for (const widget of stillAffected) {
+    let pushed = false;
+    let newWidgetX = widget.x;
+    let newWidgetY = widget.y;
+
+    // Calculate push distance based on resize direction
+    if (isResizingRight) {
+      // Push widgets to the right until they touch viewport edge or another widget
+      const pushDistance = (newBounds.x + newBounds.w) - widget.x;
+      newWidgetX = widget.x + pushDistance;
+      
+      // Check if widget fits within viewport after push
+      if (newWidgetX + widget.w <= cols) {
+        // Check if pushed position is free (no collision with other widgets)
+        const occupancy = createOccupancyGrid(
+          workingLayouts.filter(l => l.i !== widget.i && l.i !== resizingId),
+          cols,
+          maxRows
+        );
+        // Mark new bounds of resizing widget as occupied
+        for (let r = newBounds.y; r < Math.min(newBounds.y + newBounds.h, maxRows); r++) {
+          for (let c = newBounds.x; c < Math.min(newBounds.x + newBounds.w, cols); c++) {
+            if (occupancy.grid[r]) {
+              occupancy.grid[r][c] = true;
+            }
+          }
         }
+        
+        if (canFitAt(occupancy, newWidgetX, newWidgetY, widget.w, widget.h)) {
+          workingLayouts = workingLayouts.map(l =>
+            l.i === widget.i ? { ...l, x: newWidgetX, y: newWidgetY } : l
+          );
+          movedWidgets.push(widget.i);
+          stillAffected = stillAffected.filter(w => w.i !== widget.i);
+          pushed = true;
+        }
+      } else {
+        // Widget would go outside viewport - cannot push, block resize
+        return { canResize: false, newLayouts: layouts, movedWidgets: [], shrunkWidgets: [] };
+      }
+    } else if (isResizingLeft) {
+      // Push widgets to the left
+      const pushDistance = oldBounds.x - newX;
+      newWidgetX = widget.x - pushDistance;
+      
+      if (newWidgetX >= 0) {
+        const occupancy = createOccupancyGrid(
+          workingLayouts.filter(l => l.i !== widget.i && l.i !== resizingId),
+          cols,
+          maxRows
+        );
+        for (let r = newBounds.y; r < Math.min(newBounds.y + newBounds.h, maxRows); r++) {
+          for (let c = newBounds.x; c < Math.min(newBounds.x + newBounds.w, cols); c++) {
+            if (occupancy.grid[r]) {
+              occupancy.grid[r][c] = true;
+            }
+          }
+        }
+        
+        if (canFitAt(occupancy, newWidgetX, newWidgetY, widget.w, widget.h)) {
+          workingLayouts = workingLayouts.map(l =>
+            l.i === widget.i ? { ...l, x: newWidgetX, y: newWidgetY } : l
+          );
+          movedWidgets.push(widget.i);
+          stillAffected = stillAffected.filter(w => w.i !== widget.i);
+          pushed = true;
+        }
+      } else {
+        // Widget would go outside viewport - cannot push, block resize
+        return { canResize: false, newLayouts: layouts, movedWidgets: [], shrunkWidgets: [] };
+      }
+    } else if (isResizingBottom) {
+      // Push widgets down
+      const pushDistance = (newBounds.y + newBounds.h) - widget.y;
+      newWidgetY = widget.y + pushDistance;
+      
+      if (newWidgetY + widget.h <= maxRows) {
+        const occupancy = createOccupancyGrid(
+          workingLayouts.filter(l => l.i !== widget.i && l.i !== resizingId),
+          cols,
+          maxRows
+        );
+        for (let r = newBounds.y; r < Math.min(newBounds.y + newBounds.h, maxRows); r++) {
+          for (let c = newBounds.x; c < Math.min(newBounds.x + newBounds.w, cols); c++) {
+            if (occupancy.grid[r]) {
+              occupancy.grid[r][c] = true;
+            }
+          }
+        }
+        
+        if (canFitAt(occupancy, newWidgetX, newWidgetY, widget.w, widget.h)) {
+          workingLayouts = workingLayouts.map(l =>
+            l.i === widget.i ? { ...l, x: newWidgetX, y: newWidgetY } : l
+          );
+          movedWidgets.push(widget.i);
+          stillAffected = stillAffected.filter(w => w.i !== widget.i);
+          pushed = true;
+        }
+      } else {
+        // Widget would go outside viewport - cannot push, block resize
+        return { canResize: false, newLayouts: layouts, movedWidgets: [], shrunkWidgets: [] };
+      }
+    } else if (isResizingTop) {
+      // Push widgets up
+      const pushDistance = oldBounds.y - newY;
+      newWidgetY = widget.y - pushDistance;
+      
+      if (newWidgetY >= 0) {
+        const occupancy = createOccupancyGrid(
+          workingLayouts.filter(l => l.i !== widget.i && l.i !== resizingId),
+          cols,
+          maxRows
+        );
+        for (let r = newBounds.y; r < Math.min(newBounds.y + newBounds.h, maxRows); r++) {
+          for (let c = newBounds.x; c < Math.min(newBounds.x + newBounds.w, cols); c++) {
+            if (occupancy.grid[r]) {
+              occupancy.grid[r][c] = true;
+            }
+          }
+        }
+        
+        if (canFitAt(occupancy, newWidgetX, newWidgetY, widget.w, widget.h)) {
+          workingLayouts = workingLayouts.map(l =>
+            l.i === widget.i ? { ...l, x: newWidgetX, y: newWidgetY } : l
+          );
+          movedWidgets.push(widget.i);
+          stillAffected = stillAffected.filter(w => w.i !== widget.i);
+          pushed = true;
+        }
+      } else {
+        // Widget would go outside viewport - cannot push, block resize
+        return { canResize: false, newLayouts: layouts, movedWidgets: [], shrunkWidgets: [] };
       }
     }
-
-    // Find empty space for this widget
-    const emptySpot = findFirstFitPosition(occupancy, widget.w, widget.h);
-
-    if (emptySpot) {
-      workingLayouts = workingLayouts.map(l =>
-        l.i === widget.i ? { ...l, x: emptySpot.x, y: emptySpot.y } : l
-      );
-      movedWidgets.push(widget.i);
-      stillAffected = stillAffected.filter(w => w.i !== widget.i);
+    
+    // If push failed but widget didn't go outside viewport, it means there's a collision
+    // In this case, don't allow resize to proceed - stop at current size
+    if (!pushed) {
+      return { canResize: false, newLayouts: layouts, movedWidgets: [], shrunkWidgets: [] };
     }
   }
 
